@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALŞ09 — Dosya Aktarımı</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background:#0f172a; color:#e2e8f0; margin:0; padding:16px; }
+    .topbar { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+    .home-btn {
+      padding:8px 14px; background:#1e293b; color:#38bdf8;
+      border:1px solid #334155; border-radius:10px;
+      text-decoration:none; font-size:.9rem;
+    }
+    button {
+      padding:10px 16px; background:#2563eb; color:#fff; border:0;
+      border-radius:10px; font-size:1rem;
+    }
+    video { width:100%; max-width:360px; border-radius:12px; background:#000; }
+    #qrbox { background:#fff; padding:12px; border-radius:12px; display:inline-block; margin:8px 0; }
+    progress { width:100%; max-width:360px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a class="home-btn" href="../index.html">← Ana Ekran</a>
+    <h1 style="font-size:1.1rem;margin:0;">ALŞ09 — Dosya Aktarımı</h1>
+  </div>
+
+  <p>Bu bölüm, ALŞ09 kodunuzun yerine geçen çalışan bir iskelettir.
+     Kendi ALŞ09 kodunuzu bu dosyaya koyabilirsiniz.</p>
+
+  <h3>Gönderen (hoca)</h3>
+  <input type="file" id="file">
+  <button id="sendBtn">QR Oluştur (offer)</button>
+  <div id="qrbox"></div>
+
+  <h3>Alıcı (öğrenci)</h3>
+  <button id="scanBtn">QR Tara (offer)</button>
+  <video id="video" playsinline muted></video>
+  <div id="qrbox2"></div>
+  <progress id="prog" value="0" max="1"></progress>
+
+  <script type="module">
+    import { renderQR, scanQR } from '../shared/qr.js';
+    import {
+      createPeer, createOfferWithChannel, answerOffer, applyAnswer,
+      sendFileOverChannel, receiveFileOverChannel
+    } from '../shared/webrtc.js';
+
+    const fileInput = document.getElementById('file');
+    const sendBtn = document.getElementById('sendBtn');
+    const qrbox = document.getElementById('qrbox');
+    const scanBtn = document.getElementById('scanBtn');
+    const video = document.getElementById('video');
+    const qrbox2 = document.getElementById('qrbox2');
+    const prog = document.getElementById('prog');
+
+    let pc, channel;
+
+    // GÖNDEREN AKIŞI
+    sendBtn.onclick = async () => {
+      const file = fileInput.files[0];
+      if (!file) return alert('Dosya seçin');
+      pc = createPeer();
+      const { channel: ch, sdp } = await createOfferWithChannel(pc);
+      channel = ch;
+      sendFileOverChannel(channel, file, p => prog.value = p);
+      await renderQR(qrbox, sdp);
+      // Alıcının answer QR'ını taramak için ayrı bir butonla devam edilir
+    };
+
+    // ALICI AKIŞI
+    scanBtn.onclick = async () => {
+      await scanQR(video, async (offerSdp) => {
+        pc = createPeer();
+        pc.ondatachannel = (e) => {
+          receiveFileOverChannel(e.channel, p => prog.value = p);
+        };
+        const answerSdp = await answerOffer(pc, offerSdp);
+        await renderQR(qrbox2, answerSdp);
+      });
+    };
+
+    // Gönderenin, alıcının answer QR'ını taraması için ek buton
+    const scanAnswerBtn = document.createElement('button');
+    scanAnswerBtn.textContent = 'Answer QR Tara (gönderen)';
+    scanAnswerBtn.onclick = () => {
+      scanQR(video, async (answerSdp) => {
+        await applyAnswer(pc, answerSdp);
+      });
+    };
+    document.body.appendChild(scanAnswerBtn);
+  </script>
+</body>
+</html>
