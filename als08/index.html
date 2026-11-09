@@ -3,94 +3,134 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ALŞ09 — Dosya Aktarımı</title>
+  <meta name="theme-color" content="#1e3a8a">
+  <title>Öğrenci</title>
   <style>
-    body { font-family: system-ui, sans-serif; background:#0f172a; color:#e2e8f0; margin:0; padding:16px; }
-    .topbar { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0f172a; color: #e2e8f0;
+      margin: 0; padding: 16px;
+      min-height: 100vh;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 16px; flex-wrap: wrap;
+    }
     .home-btn {
-      padding:8px 14px; background:#1e293b; color:#38bdf8;
-      border:1px solid #334155; border-radius:10px;
-      text-decoration:none; font-size:.9rem;
+      padding: 8px 14px;
+      background: #1e293b; color: #38bdf8;
+      border: 1px solid #334155; border-radius: 10px;
+      text-decoration: none; font-size: .9rem;
+      display: inline-flex; align-items: center;
     }
+    .home-btn:active { transform: scale(.97); }
+    h1 { font-size: 1.1rem; margin: 0; }
+    section {
+      background: #1e293b; border: 1px solid #334155;
+      border-radius: 12px; padding: 16px; margin-bottom: 16px;
+    }
+    h3 { margin: 0 0 12px; color: #38bdf8; font-size: 1rem; }
     button {
-      padding:10px 16px; background:#2563eb; color:#fff; border:0;
-      border-radius:10px; font-size:1rem;
+      padding: 10px 16px; background: #2563eb; color: #fff;
+      border: 0; border-radius: 10px; font-size: 1rem; cursor: pointer;
     }
-    video { width:100%; max-width:360px; border-radius:12px; background:#000; }
-    #qrbox { background:#fff; padding:12px; border-radius:12px; display:inline-block; margin:8px 0; }
-    progress { width:100%; max-width:360px; }
+    button:disabled { background: #475569; cursor: default; }
+    video {
+      width: 100%; max-width: 360px;
+      border-radius: 12px; background: #000; margin-top: 8px;
+    }
+    #qrbox {
+      background: #fff; padding: 12px; border-radius: 12px;
+      display: inline-block; margin: 8px 0; min-height: 40px;
+    }
+    #qrbox canvas { display: block; }
+    progress {
+      width: 100%; max-width: 360px;
+      display: block; margin-top: 8px;
+    }
+    .id {
+      font-family: monospace; font-size: .85rem;
+      color: #94a3b8; word-break: break-all;
+    }
+    .status {
+      font-size: .9rem; color: #94a3b8; margin-top: 8px;
+    }
   </style>
 </head>
 <body>
+
   <div class="topbar">
     <a class="home-btn" href="../index.html">← Ana Ekran</a>
-    <h1 style="font-size:1.1rem;margin:0;">ALŞ09 — Dosya Aktarımı</h1>
+    <h1>Öğrenci</h1>
   </div>
 
-  <p>Bu bölüm, ALŞ09 kodunuzun yerine geçen çalışan bir iskelettir.
-     Kendi ALŞ09 kodunuzu bu dosyaya koyabilirsiniz.</p>
-
-  <h3>Gönderen (hoca)</h3>
-  <input type="file" id="file">
-  <button id="sendBtn">QR Oluştur (offer)</button>
-  <div id="qrbox"></div>
-
-  <h3>Alıcı (öğrenci)</h3>
-  <button id="scanBtn">QR Tara (offer)</button>
-  <video id="video" playsinline muted></video>
-  <div id="qrbox2"></div>
-  <progress id="prog" value="0" max="1"></progress>
+  <!-- Dosya Alıcı -->
+  <section>
+    <h3>Dosya Al</h3>
+    <p class="status">Öğretmenin gösterdiği QR kodu okutun.</p>
+    <button id="scanBtn">QR Tara</button>
+    <video id="video" playsinline muted></video>
+    <div id="qrbox"></div>
+    <div class="id" id="answerId"></div>
+    <progress id="recvProg" value="0" max="1"></progress>
+    <p class="status" id="recvStatus"></p>
+  </section>
 
   <script type="module">
     import { renderQR, scanQR } from '../shared/qr.js';
     import {
-      createPeer, createOfferWithChannel, answerOffer, applyAnswer,
-      sendFileOverChannel, receiveFileOverChannel
+      createPeer, answerOffer,
+      receiveFileOverChannel
     } from '../shared/webrtc.js';
+    import { publishSDP, fetchSDP } from '../shared/signaling.js';
 
-    const fileInput = document.getElementById('file');
-    const sendBtn = document.getElementById('sendBtn');
-    const qrbox = document.getElementById('qrbox');
-    const scanBtn = document.getElementById('scanBtn');
-    const video = document.getElementById('video');
-    const qrbox2 = document.getElementById('qrbox2');
-    const prog = document.getElementById('prog');
+    const scanBtn   = document.getElementById('scanBtn');
+    const video     = document.getElementById('video');
+    const qrbox     = document.getElementById('qrbox');
+    const answerId  = document.getElementById('answerId');
+    const recvProg  = document.getElementById('recvProg');
+    const recvStatus = document.getElementById('recvStatus');
 
-    let pc, channel;
+    let pc;
 
-    // GÖNDEREN AKIŞI
-    sendBtn.onclick = async () => {
-      const file = fileInput.files[0];
-      if (!file) return alert('Dosya seçin');
-      pc = createPeer();
-      const { channel: ch, sdp } = await createOfferWithChannel(pc);
-      channel = ch;
-      sendFileOverChannel(channel, file, p => prog.value = p);
-      await renderQR(qrbox, sdp);
-      // Alıcının answer QR'ını taramak için ayrı bir butonla devam edilir
-    };
-
-    // ALICI AKIŞI
     scanBtn.onclick = async () => {
-      await scanQR(video, async (offerSdp) => {
-        pc = createPeer();
-        pc.ondatachannel = (e) => {
-          receiveFileOverChannel(e.channel, p => prog.value = p);
-        };
-        const answerSdp = await answerOffer(pc, offerSdp);
-        await renderQR(qrbox2, answerSdp);
-      });
-    };
+      scanBtn.disabled = true;
+      recvStatus.textContent = 'Kamera açılıyor...';
 
-    // Gönderenin, alıcının answer QR'ını taraması için ek buton
-    const scanAnswerBtn = document.createElement('button');
-    scanAnswerBtn.textContent = 'Answer QR Tara (gönderen)';
-    scanAnswerBtn.onclick = () => {
-      scanQR(video, async (answerSdp) => {
-        await applyAnswer(pc, answerSdp);
+      await scanQR(video, async (id) => {
+        try {
+          recvStatus.textContent = 'QR okundu, bağlantı kuruluyor...';
+
+          // QR'dan gelen kısa ID ile offer SDP'sini çek
+          const offerSdp = await fetchSDP(id);
+
+          pc = createPeer();
+
+          // Dosya geldiğinde parçaları topla ve indir
+          pc.ondatachannel = (e) => {
+            receiveFileOverChannel(e.channel, (p) => {
+              recvProg.value = p;
+              recvStatus.textContent = 'Dosya alınıyor: %' + Math.round(p * 100);
+            });
+            recvStatus.textContent = 'Bağlantı kuruldu, dosya bekleniyor...';
+          };
+
+          // Answer üret
+          const answerSdp = await answerOffer(pc, offerSdp);
+          const newAnswerId = await publishSDP(answerSdp);
+
+          answerId.textContent = 'Answer ID: ' + newAnswerId;
+          await renderQR(qrbox, newAnswerId);
+
+          recvStatus.textContent = 'Bu QR kodu öğretmene gösterin.';
+          scanBtn.disabled = false;
+        } catch (err) {
+          recvStatus.textContent = 'Hata: ' + err.message;
+          scanBtn.disabled = false;
+        }
       });
     };
-    document.body.appendChild(scanAnswerBtn);
   </script>
 </body>
 </html>
